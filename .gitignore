@@ -1,0 +1,41 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# --- packaging / build ---
+build/
+dist/
+*.egg-info/
+*.egg
+.eggs/
+wheels/
+pip-wheel-metadata/
+
+# --- environments ---
+.venv/
+venv/
+env/
+.env
+
+# --- jupyter ---
+.ipynb_checkpoints/
+
+# --- editors / OS ---
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# --- SuperMock: synthetic data is NOT tracked (huge; lives elsewhere) ---
+# snapshots and user working files written by SuperMock.save()
+*.snapshot.h5
+snapshots/
+# never commit raw patch products if someone points a symlink/copy here
+lightcone_catalogs/
+photometry/
+luminosities/
+seds/
+# NB: the bundled OBSERVATION data under supermockload/data/ IS tracked
+# (small) -- it must NOT be ignored.

@@ -1,0 +1,4 @@
+# Build backend only; package metadata lives in setup.py (classic layout).
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
