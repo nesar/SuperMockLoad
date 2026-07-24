@@ -44,16 +44,30 @@ with open(os.path.join(_DATA, 'band_names.json')) as _f:
 
 # default SYNTHETIC-data root: the directory the repo sits in (…/Mocks_v3_data),
 # overridable via $SUPERMOCK_DATA or root=.
-_DEFAULT_ROOT = os.environ.get(
-    'SUPERMOCK_DATA', os.path.dirname(os.path.dirname(_HERE)))
-
 _SCALAR_FIELDS = ('redshift', 'ra', 'dec', 'stellar_mass', 'stellar_mass_zobs',
                   'peak_mass', 'central', 'merged', 'core_tag', 'fof_halo_tag')
 
 
-def available_patches(root: str | None = None) -> list[int]:
-    """Skypatch ids that have a catalog under `root`."""
-    root = root or _DEFAULT_ROOT
+def _resolve_root(root):
+    """Where the synthetic patch files live.  Resolved at CALL time (not at
+    import) so a `$SUPERMOCK_DATA` set in the session/notebook is picked up:
+        explicit root=  >  $SUPERMOCK_DATA  >  repo-checked-out-inside-data  >  cwd
+    The last two are conveniences; a missing patch raises a FileNotFoundError
+    that names the path tried, so a wrong root is obvious."""
+    if root:
+        return root
+    env = os.environ.get('SUPERMOCK_DATA')
+    if env:
+        return env
+    guess = os.path.dirname(os.path.dirname(_HERE))     # repo inside the data dir
+    if os.path.isdir(os.path.join(guess, 'lightcone_catalogs')):
+        return guess
+    return os.getcwd()
+
+
+def available_patches(root=None):
+    """Skypatch ids that have a catalog under `root` (or $SUPERMOCK_DATA)."""
+    root = _resolve_root(root)
     pat = os.path.join(root, 'lightcone_catalogs',
                        'lightcone_galaxies_skypatch_*.h5')
     ids = []
@@ -88,7 +102,7 @@ class SuperMock:
     def __init__(self, patches, root=None, fields=None, extra_fields=(),
                  photometry=True, luminosities=True, seds=False,
                  downsample=None, seed=0, verbose=True):
-        self.root = root or _DEFAULT_ROOT
+        self.root = _resolve_root(root)
         self.patches = [int(patches)] if np.isscalar(patches) else [int(p) for p in patches]
         self._verbose = verbose
         self._has_phot = photometry
@@ -146,7 +160,11 @@ class SuperMock:
     def _load_catalog(self, P):
         path = self._path(P, 'lightcone_catalogs', 'lightcone_galaxies')
         if not os.path.exists(path):
-            raise FileNotFoundError(path)
+            raise FileNotFoundError(
+                f'catalog not found:\n  {path}\n'
+                f'root is {self.root!r}. Point it at the data dir with '
+                f"SuperMock({P}, root='/path/to/data') or "
+                "os.environ['SUPERMOCK_DATA']='/path/to/data'.")
         with h5py.File(path, 'r') as f:
             groups = sorted(f.keys())            # SAME order as the flat files
             sizes = [f[g]['redshift'].shape[0] for g in groups]

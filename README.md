@@ -39,15 +39,20 @@ A *patch* is four row-aligned HDF5 files under a data root:
 <root>/seds/seds_skypatch_<P>.h5                               f_nu SEDs (LARGE, ~1.6 TB/patch)
 ```
 
-The loader finds them via `--root` / `SUPERMOCK_DATA`, defaulting to the
-directory this package sits in:
+Tell the loader where they are with either `root=` or the `SUPERMOCK_DATA`
+environment variable:
 
 ```python
-SuperMock(3, root='/path/to/Mocks_v3_data')       # explicit
-# or:  export SUPERMOCK_DATA=/path/to/Mocks_v3_data
-from supermockload import available_patches
+from supermockload import SuperMock, available_patches
+
+SuperMock(3, root='/path/to/data')                # per call
+# or set it once (picked up by every call, incl. available_patches):
+import os; os.environ['SUPERMOCK_DATA'] = '/path/to/data'
 available_patches()                               # -> [3, ...]
 ```
+
+If neither is given it falls back to `$SUPERMOCK_DATA`, then the current
+directory; a missing patch raises an error naming the path it tried.
 
 ## Loading options
 
