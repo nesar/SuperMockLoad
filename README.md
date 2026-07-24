@@ -23,10 +23,34 @@ wave, sed = sm.seds(rows=sm.sample(100))   # SEDs are opt-in and pulled by row
 ## Install
 
 ```bash
-pip install -e .          # from the repo root
+pip install -e .                       # editable, from the repo root
+# or a plain install:
+pip install .
 ```
 
-Dependencies: numpy, h5py, matplotlib, astropy.
+Dependencies: numpy, h5py, matplotlib, astropy (all likely already present).
+
+**Old pip?** With pip < 21.3, `pip install -e .` can fail in its legacy
+`setup.py develop` path (`No module named pip` from the build-isolation
+subprocess). Any of these fixes it:
+
+```bash
+pip install -e . --no-build-isolation   # simplest
+pip install .                           # non-editable, uses the wheel path
+pip install -U pip && pip install -e .  # or just modernise pip
+```
+
+**Clean env (recommended for sharing / reproducibility):**
+
+```bash
+conda create -n supermock python=3.11 numpy h5py matplotlib astropy -y
+conda activate supermock
+pip install -e .
+```
+
+No install is even required — the package is pure-Python and self-contained,
+so `sys.path.insert(0, '/path/to/SuperMockLoad')` then `import supermockload`
+also works.
 
 ## Pointing at the data
 
