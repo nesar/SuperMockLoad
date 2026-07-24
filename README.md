@@ -1,10 +1,10 @@
 # SuperMockLoad
 
-Load and plot the **SPHEREx SuperMock** lightcone galaxy catalogs — synthetic
+Load and plot the **SuperMock** galaxy catalogs — synthetic
 galaxies painted onto the HACC *Last Journey* simulation (redshifts, positions,
 stellar masses, SFHs, full optical–IR SEDs, and multi-survey photometry).
 
-The package ships the **observational comparison data** (SDSS, DEEP2,
+The package ships a sample of the **observational comparison data** (SDSS, DEEP2,
 WISE×SuperCOSMOS, AllWISE, GAMA — all downsampled, ~3 MB) and the plotting code
 to reproduce the validation report, but **not** the synthetic catalogs
 themselves (they are large; point the loader at wherever they live).
