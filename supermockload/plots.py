@@ -393,6 +393,28 @@ def mag_distributions(sm, ax=None, entries=(('LSST', 'i'), ('WISE', 'W1'),
     return ax
 
 
+def bandpasses(sm, ax=None, surveys=('LSST', '2MASS', 'WISE'), spherex=True):
+    """Filter response curves used to make the photometry.  SPHEREx (102
+    narrow channels) is drawn as a light band envelope; broad surveys as
+    individual curves."""
+    ax = _ax(ax)
+    cmap = {'LSST': '#1d4e79', '2MASS': '#6b8e23', 'WISE': '#c1440e',
+            'LEGACYSURVEY': '#7d3f9c', 'COSMOS': '#888', 'F784': '#c98a3a'}
+    for s in surveys:
+        for k, (w, t) in sm.bandpass(s).items():
+            ax.fill_between(w, t/t.max(), alpha=0.25, color=cmap.get(s, '0.5'))
+        ax.plot([], [], color=cmap.get(s, '0.5'), lw=3, label=s)
+    if spherex:
+        for w, t in sm.bandpass('SPHEREx').values():
+            ax.plot(w, t/t.max(), color='0.4', lw=0.4, alpha=0.5)
+        ax.plot([], [], color='0.4', lw=1, label='SPHEREx (102 ch)')
+    ax.set(xscale='log', xlabel=r'$\lambda\,[\mu m]$',
+           ylabel='transmission (peak=1)', title='filter response curves',
+           ylim=(0, 1.05))
+    ax.legend(frameon=False, fontsize=8, ncol=2)
+    return ax
+
+
 # ----------------------------------------------------------- convenience grid
 def report(sm, seds=False, save=None):
     """A multi-panel summary spanning the catalog's modalities.  Cheap panels

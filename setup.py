@@ -20,6 +20,7 @@ setup(
     package_data={'supermockload': [
         'data/*.json',
         'data/*.npz',
+        'data/*.h5',
         'data/observations/*',
         'data/filters/*',
     ]},

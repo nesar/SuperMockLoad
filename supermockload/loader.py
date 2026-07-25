@@ -282,6 +282,35 @@ class SuperMock:
             self._wl = wl
         return wl[name]
 
+    def bandpass(self, survey, band=None):
+        """Filter response curve(s) used to convolve the SEDs into photometry.
+        Returns (wavelength[micron], transmission) for one `band`, or a dict
+        {band_name: (wave, trans)} for the whole survey if band is None.
+        Transmission is the per-photon relative response (peak-normalised)."""
+        bp = self.__dict__.get('_bp')
+        if bp is None:
+            bp = {}
+            with h5py.File(os.path.join(_DATA, 'bandpasses.h5'), 'r') as f:
+                for s in f:
+                    bp[s] = {k: f[s][k][...] for k in f[s]}
+            self._bp = bp
+        g = bp[survey]
+        if band is None:
+            return {k: (v[0], v[1]) for k, v in g.items()}
+        key = band if band in g else None
+        if key is None:
+            for cand in (f'{survey}_{band}', f'{survey}_{band}_DEcam'):
+                if cand in g:
+                    key = cand
+                    break
+        if key is None:
+            hits = [k for k in g if k.split('_')[-1] == band or k.endswith('_'+band)]
+            key = hits[0] if len(hits) == 1 else None
+        if key is None:
+            raise KeyError(f'band {band!r} not in {survey}; have {list(g)[:6]}...')
+        d = g[key]
+        return d[0], d[1]
+
     def mag(self, survey, band):
         """AB mag in one band, e.g. mag('LSST','i') or mag('WISE','W1')."""
         return self.survey(survey)[:, _band_index(BAND_NAMES[survey], survey, band)]
