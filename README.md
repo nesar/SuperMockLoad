@@ -94,9 +94,12 @@ sm = SuperMock.from_file('patch3_200k.h5')    # instant; carries the SED subset
 | `sm.luminosity('L_BOL_LSUN')` | a luminosities column |
 | `sm.abs_mag('SDSS','r')` | rest-frame absolute mag |
 | `sm.seds(rows=...)` | `(wave_rest, f_nu[Jy])`; observed λ = wave_rest·(1+z) |
-| `sm.field('sfh')` | any loaded catalog field (2-D too) |
-| `sm.area_deg2` | footprint (wrap-aware) |
-| `sm.patch_id` | per-row patch id (for multi-patch) |
+| `sm.field('sfh')` | any loaded catalog field (2-D too; load via `extra_fields=`) |
+| `sm.mah_time`, `sm.sfh_time` | cosmic-age [Gyr] x-axes for `mah` (101) / `sfh` (117) |
+| `sm.wavelengths('SPHEREx')` | band effective wavelengths [μm] (e.g. 102 channels) |
+| `sm.abs_mag('SDSS','r')`, `sm.luminosity(...)` | rest-frame quantities |
+| `sm.catalog_fields()` / `sm.loaded_fields()` | all fields on disk / in memory |
+| `sm.area_deg2`, `sm.completeness`, `sm.patch_id` | footprint, downsample fraction, per-row patch |
 
 Surveys: `LSST WISE SPHEREx COSMOS LEGACYSURVEY 2MASS F784` (all AB).
 
@@ -106,20 +109,29 @@ Surveys: `LSST WISE SPHEREx COSMOS LEGACYSURVEY 2MASS F784` (all AB).
 observations. Cheap panels (photometry/luminosities only):
 
 ```python
-plots.redshift_distribution(sm)   plots.gsmf(sm)          plots.smhm(sm)
-plots.luminosity_function(sm)     plots.number_counts(sm) plots.optical_colors(sm,'SDSS')
-plots.wise_w1w2(sm)               plots.report(sm)        # compact grid
+plots.redshift_distribution(sm)   plots.gsmf(sm)            plots.smhm(sm)
+plots.luminosity_function(sm)     plots.number_counts(sm)   plots.wise_w1w2(sm)
+plots.optical_colors(sm,'SDSS')   plots.mag_distributions(sm)   # density contours / multi-survey
+```
+
+History panels (need `extra_fields=('sfh','mah')`):
+
+```python
+plots.mah_tracks(sm)      plots.sfh_tracks(sm)      # M_halo(t), SFR(t) vs cosmic age
 ```
 
 SED panels (need `seds=True` or a snapshot with an SED subset):
 
 ```python
-plots.wise_colors(sm)     # W2-W3 vs XSCOS (projects SEDs through WISE RSRs)
-plots.example_seds(sm)    plots.gama_stacks(sm, z0=0.1, logm=10.5)
+plots.spherex_spectra(sm)   # 102-channel SPHEREx spectrophotometry
+plots.wise_colors(sm)       # W2-W3 vs XSCOS (projects SEDs through WISE RSRs)
+plots.example_seds(sm)      plots.gama_stacks(sm, z0=0.1, logm=10.5)
 ```
 
-Each takes an optional `ax=` and returns the Axes, so they compose into your
-own figures.
+`plots.report(sm, seds=True)` lays out every available modality in one grid.
+Number densities (GSMF / LF / counts) are auto-scaled by `sm.completeness`, so
+they match the full sample even when downsampled. Each panel takes an optional
+`ax=` and returns the Axes, so they compose into your own figures.
 
 ## Notebooks
 

@@ -30,6 +30,33 @@ def _ax(ax, **kw):
     return ax
 
 
+def _contour(ax, x, y, color, label=None, rng=None, bins=60, filled=False,
+             levels=(0.5, 0.9)):
+    """Density contours enclosing the given probability levels."""
+    m = np.isfinite(x) & np.isfinite(y)
+    x, y = x[m], y[m]
+    if x.size < 50:
+        return
+    H, xe, ye = np.histogram2d(x, y, bins=bins, range=rng)
+    H = H.T
+    try:                                            # light smoothing if scipy present
+        from scipy.ndimage import gaussian_filter
+        H = gaussian_filter(H, 1.0)
+    except Exception:
+        pass
+    Hs = np.sort(H.ravel())[::-1]
+    csum = np.cumsum(Hs) / Hs.sum()
+    lv = sorted(Hs[np.searchsorted(csum, l)] for l in levels)
+    lv = np.unique(lv)
+    xc, yc = 0.5*(xe[1:]+xe[:-1]), 0.5*(ye[1:]+ye[:-1])
+    if filled:
+        ax.contourf(xc, yc, H, levels=list(lv)+[H.max()+1], colors=[color],
+                    alpha=0.25)
+    ax.contour(xc, yc, H, levels=lv, colors=[color], linewidths=1.4)
+    if label:
+        ax.plot([], [], color=color, lw=1.6, label=label)
+
+
 # --------------------------------------------------------------- 01 redshift
 def redshift_distribution(sm, ax=None, bins=80, zmax=3.0):
     ax = _ax(ax)
@@ -57,7 +84,8 @@ def gsmf(sm, ax=None, zlo=0.05, zhi=0.30, epoch_mass=True):
     mid = 0.5*(mb[1:]+mb[:-1])
     Vc = (COS.comoving_volume(zhi)-COS.comoving_volume(zlo)).value * sm.area_deg2/41253.
     sel = (z >= zlo) & (z < zhi)
-    h = np.histogram(logM[sel], bins=mb)[0]/Vc/0.1
+    # /completeness recovers the full number density when sm is downsampled
+    h = np.histogram(logM[sel], bins=mb)[0]/Vc/0.1/sm.completeness
     ax.plot(mid, np.where(h > 0, h, np.nan), color='#1d4e79', lw=1.9,
             label=f'mock {zlo}<z<{zhi}')
     ax.plot(mid, _baldry(mid), 'k--', lw=1.3, label='Baldry+12 (GAMA)')
@@ -105,7 +133,7 @@ def luminosity_function(sm, ax=None, zmax=0.3):
     mb = np.arange(-24, -16, 0.4)
     mid = 0.5*(mb[1:]+mb[:-1])
     Vc = COS.comoving_volume(zmax).value * sm.area_deg2/41253.
-    h = np.histogram(Mr[sel], bins=mb)[0]/Vc/0.4
+    h = np.histogram(Mr[sel], bins=mb)[0]/Vc/0.4/sm.completeness
     ax.plot(mid, np.where(h > 0, h, np.nan), color='#1d4e79', lw=1.9,
             marker='o', ms=3, label=f'mock z<{zmax}')
     ax.plot(mid, _blanton_lf(mid), 'k--', lw=1.3, label='Blanton+03 $^{0.1}r$')
@@ -123,7 +151,7 @@ def number_counts(sm, ax=None, survey='LSST', band='i',
     m = sm.mag(survey, band)
     m = m[np.isfinite(m)]
     mid = 0.5*(bins[1:]+bins[:-1])
-    h = np.histogram(m, bins=bins)[0]/sm.area_deg2/np.diff(bins)
+    h = np.histogram(m, bins=bins)[0]/sm.area_deg2/np.diff(bins)/sm.completeness
     ax.semilogy(mid, h, color='#1d4e79', lw=1.9, marker='o', ms=3)
     ax.set(xlabel=f'{survey} {band} (AB)',
            ylabel=r'N [deg$^{-2}$ mag$^{-1}$]',
@@ -141,19 +169,21 @@ def optical_colors(sm, ax=None, survey='SDSS', cx='g-i', cy='u-g', zmax=None):
     ax = _ax(ax)
     o = obs.load_survey(survey)
     ci = {n: i for i, n in enumerate(obs.SURVEY_COLOR_NAMES)}
-    # mock LSST colours
     u, g, r, i, zb = (sm.mag('LSST', b) for b in 'ugriz')
     mcol = {'u-g': u-g, 'g-i': g-i, 'r-i': r-i, 'i-z': i-zb}
     if zmax is None:
         zmax = {'SDSS': 0.42, 'DEEP2': 1.05}.get(survey, sm.redshift.max())
-    msel = np.isfinite(mcol[cx]) & np.isfinite(mcol[cy]) & (sm.redshift <= zmax)
-    ax.scatter(mcol[cx][msel][::20], mcol[cy][msel][::20], s=2, alpha=.15,
-               color='0.4', label=f'mock LSST (z<{zmax})', rasterized=True)
+    msel = sm.redshift <= zmax
     os_ = o['zspec'] <= zmax
-    ax.scatter(o['colors'][os_, ci[cx]], o['colors'][os_, ci[cy]], s=4,
-               alpha=.4, color='#c23b3b', label=f'{survey} (data)')
-    ax.set(xlabel=cx, ylabel=cy, title=f'mock vs {survey} colours')
-    ax.legend(frameon=False, fontsize=8, markerscale=3)
+    rng = [(np.nanpercentile(o['colors'][os_, ci[cx]], [1, 99])),
+           (np.nanpercentile(o['colors'][os_, ci[cy]], [1, 99]))]
+    _contour(ax, mcol[cx][msel], mcol[cy][msel], '0.35',
+             label=f'mock LSST (z<{zmax})', rng=rng, filled=True)
+    _contour(ax, o['colors'][os_, ci[cx]], o['colors'][os_, ci[cy]], '#c23b3b',
+             label=f'{survey} (data)', rng=rng)
+    ax.set(xlabel=cx, ylabel=cy, title=f'mock vs {survey} colours',
+           xlim=rng[0], ylim=rng[1])
+    ax.legend(frameon=False, fontsize=8)
     return ax
 
 
@@ -273,28 +303,132 @@ def gama_stacks(sm, ax=None, z0=0.1, logm=10.5, dz=0.02, dm=0.25, seed=2,
     return ax
 
 
+# ================================================  extra modality panels  ===
+_SHADES = ['#1d4e79', '#2f6fb2', '#6fa0cc', '#c98a3a']
+
+
+def _mass_bins(logm):
+    return [(10.0, 10.5), (10.5, 11.0), (11.0, 11.5)]
+
+
+def mah_tracks(sm, ax=None, mass_bins=None, zmax=0.5):
+    """Median halo mass-accretion histories M_halo(t) in stellar-mass bins.
+    Needs the 'mah' field: SuperMock(..., extra_fields=('mah',))."""
+    ax = _ax(ax)
+    if 'mah' not in sm.cat:
+        raise KeyError("open with extra_fields=('mah',) to plot MAHs")
+    t = sm.mah_time                                 # Gyr, 101 snapshots
+    mah = sm.field('mah')                           # M_halo(t) [Msun/h]
+    lm = sm.logM_zobs
+    sel0 = sm.redshift < zmax
+    for (lo, hi), c in zip(mass_bins or _mass_bins(lm), _SHADES):
+        s = sel0 & (lm >= lo) & (lm < hi)
+        if s.sum() < 20:
+            continue
+        block = np.log10(np.clip(mah[s], 1, None))
+        block[block < 1] = np.nan
+        med = np.nanmedian(block, axis=0)
+        ax.plot(t, med, color=c, lw=1.8, label=f'{lo}<logM*<{hi}')
+    ax.set(xlabel='cosmic age [Gyr]', ylabel=r'$\log_{10} M_{\rm halo}$ [$M_\odot/h$]',
+           title=f'mass accretion histories (z<{zmax})')
+    ax.legend(frameon=False, fontsize=8)
+    return ax
+
+
+def sfh_tracks(sm, ax=None, mass_bins=None, zmax=0.5):
+    """Median star-formation histories SFR(t) in stellar-mass bins.
+    Needs the 'sfh' field: SuperMock(..., extra_fields=('sfh',))."""
+    ax = _ax(ax)
+    if 'sfh' not in sm.cat:
+        raise KeyError("open with extra_fields=('sfh',) to plot SFHs")
+    t = sm.sfh_time                                 # Gyr, 117 bins
+    sfh = sm.field('sfh')                            # SFR(t) [Msun/yr]
+    lm = sm.logM_zobs
+    sel0 = sm.redshift < zmax
+    for (lo, hi), c in zip(mass_bins or _mass_bins(lm), _SHADES):
+        s = sel0 & (lm >= lo) & (lm < hi)
+        if s.sum() < 20:
+            continue
+        med = np.median(sfh[s], axis=0)
+        ax.plot(t, med, color=c, lw=1.8, label=f'{lo}<logM*<{hi}')
+    ax.set(xlabel='cosmic age [Gyr]', ylabel=r'SFR [$M_\odot$/yr]', yscale='log',
+           title=f'star-formation histories (z<{zmax})')
+    ax.legend(frameon=False, fontsize=8)
+    return ax
+
+
+def spherex_spectra(sm, ax=None, n=8, seed=1, zmax=0.5):
+    """SPHEREx low-res spectrophotometry (102 channels) for example galaxies --
+    'SPHEREx coverage'.  AB mag vs effective wavelength."""
+    ax = _ax(ax)
+    wl = sm.wavelengths('SPHEREx')                  # micron, 102 channels
+    order = np.argsort(wl)
+    rows = sm.sample(n, seed=seed, mask=sm.redshift < zmax)
+    sx = sm.survey('SPHEREx')[rows]
+    for k in range(rows.size):
+        m = sx[k][order]
+        ax.plot(wl[order], m, '-', lw=0.8, alpha=0.8)
+    ax.set(xscale='log', xlabel=r'$\lambda_{\rm eff}\,[\mu m]$',
+           ylabel='AB mag', title=f'SPHEREx spectrophotometry ({rows.size} galaxies)')
+    ax.invert_yaxis()
+    return ax
+
+
+def mag_distributions(sm, ax=None, entries=(('LSST', 'i'), ('WISE', 'W1'),
+                                            ('2MASS', 'J'), ('LEGACYSURVEY', 'decamr'))):
+    """Apparent-magnitude distributions across the available surveys/bands."""
+    ax = _ax(ax)
+    for (s, b), c in zip(entries, ['#1d4e79', '#c1440e', '#6b8e23', '#7d3f9c']):
+        try:
+            m = sm.mag(s, b)
+        except KeyError:
+            continue
+        m = m[np.isfinite(m)]
+        if m.size:
+            ax.hist(m, bins=np.linspace(12, 28, 80), histtype='step', lw=1.6,
+                    color=c, label=f'{s} {b}')
+    ax.set(xlabel='AB mag', ylabel='galaxies', yscale='log',
+           title='magnitude distributions (multi-survey)')
+    ax.legend(frameon=False, fontsize=8)
+    return ax
+
+
 # ----------------------------------------------------------- convenience grid
 def report(sm, seds=False, save=None):
-    """A compact multi-panel summary (the cheap panels, + SED panels if the
-    SuperMock was opened with seds=True)."""
+    """A multi-panel summary spanning the catalog's modalities.  Cheap panels
+    always; MAH/SFH panels if those fields were loaded
+    (extra_fields=('sfh','mah')); SED panels if opened with seds=True."""
     import matplotlib.pyplot as plt
-    have_sed = seds and bool(sm._sed_paths)
     panels = [redshift_distribution, gsmf, smhm, luminosity_function,
-              number_counts, wise_w1w2]
-    if have_sed:
-        panels += [wise_colors, gama_stacks, example_seds]
-    ncol = 3
+              number_counts,
+              lambda s, ax=None: optical_colors(s, ax=ax, survey='SDSS'),
+              wise_w1w2, mag_distributions]
+    names = ['redshift', 'gsmf', 'smhm', 'lum_fn', 'counts', 'sdss_colours',
+             'wise_w1w2', 'mag_dists']
+    if 'mah' in sm.cat:
+        panels.append(mah_tracks); names.append('mah')
+    if 'sfh' in sm.cat:
+        panels.append(sfh_tracks); names.append('sfh')
+    if seds and bool(sm._sed_paths or sm.__dict__.get('_cache_sed') is not None):
+        panels += [spherex_spectra, wise_colors, gama_stacks, example_seds]
+        names += ['spherex', 'wise_w2w3', 'gama', 'seds']
+    else:
+        panels.append(spherex_spectra); names.append('spherex')
+    ncol = 4
     nrow = int(np.ceil(len(panels)/ncol))
-    fig, axes = plt.subplots(nrow, ncol, figsize=(6*ncol, 4.2*nrow))
-    for p, ax in zip(panels, np.ravel(axes)):
+    fig, axes = plt.subplots(nrow, ncol, figsize=(5.2*ncol, 3.9*nrow))
+    axf = np.ravel(axes)
+    for p, nm, ax in zip(panels, names, axf):
         try:
             p(sm, ax=ax)
         except Exception as e:                      # keep the grid drawing
-            ax.text(.5, .5, f'{p.__name__}:\n{e}', ha='center', fontsize=7)
-    for ax in np.ravel(axes)[len(panels):]:
+            ax.text(.5, .5, f'{nm}:\n{e}', ha='center', va='center', fontsize=7,
+                    wrap=True); ax.set_axis_off()
+    for ax in axf[len(panels):]:
         ax.axis('off')
+    dsm = '' if sm.completeness >= 0.999 else f' (downsampled x{sm.completeness:.3g})'
     fig.suptitle(f'SuperMock report -- patches {sm.patches}, '
-                 f'{sm.area_deg2:.0f} deg2, {sm.n:,} galaxies', fontsize=12)
+                 f'{sm.area_deg2:.0f} deg2, {sm.n:,} galaxies{dsm}', fontsize=13)
     fig.tight_layout(rect=[0, 0, 1, 0.98])
     if save:
         fig.savefig(save, dpi=130)

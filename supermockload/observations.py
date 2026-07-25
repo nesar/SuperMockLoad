@@ -37,16 +37,20 @@ def load_allwise_locus():
 
 
 def load_gama_stacks():
-    """Parse the GAMA median-stack CSV into (z, logM*) keyed spectra."""
+    """Parse the GAMA median-stack CSV into (z, logM*) keyed spectra.
+
+    Header columns are 'f_nu_mJy_z<z>_m<M>' -- read manually (genfromtxt would
+    mangle the decimal points in the names)."""
     path = os.path.join(_OBS, 'gama_median_stacks.csv')
-    rows = np.genfromtxt(path, delimiter=',', names=True)
-    cols = rows.dtype.names
-    wave = rows[cols[0]]                                   # lambda_micron
+    with open(path) as f:
+        header = f.readline().strip().split(',')
+    data = np.loadtxt(path, delimiter=',', skiprows=1)
+    wave = data[:, 0]                                      # lambda_micron
     stacks, zset, mset = {}, [], []
-    for c in cols[1:]:                                     # f_nu_mJy_z<z>_m<M>
+    for j, c in enumerate(header[1:], start=1):            # f_nu_mJy_z<z>_m<M>
         parts = c.split('_')
-        z = float(parts[-2][1:]); m = float(parts[-1][1:])
-        stacks[(z, m)] = rows[c]
+        z = float(parts[-2].lstrip('z')); m = float(parts[-1].lstrip('m'))
+        stacks[(z, m)] = data[:, j]
         zset.append(z); mset.append(m)
     return dict(wave_um=wave, stacks=stacks,
                 zbins=sorted(set(zset)), mbins=sorted(set(mset)))

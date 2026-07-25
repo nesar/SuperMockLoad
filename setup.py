@@ -19,6 +19,7 @@ setup(
     include_package_data=True,                      # ships supermockload/data/**
     package_data={'supermockload': [
         'data/*.json',
+        'data/*.npz',
         'data/observations/*',
         'data/filters/*',
     ]},

@@ -119,6 +119,7 @@ class SuperMock:
         self._file_row = []            # per kept row: original per-patch file row
         self._patch_id = []            # per kept row: patch id
         self._keep = {}                # patch -> file rows kept (sorted)
+        self._n_full = 0               # total rows on disk (before downsample)
 
         for P in self.patches:
             self._load_catalog(P)
@@ -187,6 +188,7 @@ class SuperMock:
                 self.cat.setdefault(k, []).append(
                     np.concatenate(blocks, axis=0) if blocks
                     else np.empty((0,), f[groups[0]][k].dtype))
+        self._n_full += n_full                      # for the completeness weight
         fr = np.arange(n_full) if keep is None else keep
         self._keep[P] = fr
         self._file_row.append(fr)
@@ -270,6 +272,15 @@ class SuperMock:
     def bands(self, name):
         """Band names (column labels) for a survey."""
         return BAND_NAMES[name]
+
+    def wavelengths(self, name):
+        """Effective wavelength [micron] of each band of a survey (x-axis for
+        photometric SEDs, e.g. the 102 SPHEREx channels)."""
+        wl = self.__dict__.get('_wl')
+        if wl is None:
+            wl = dict(np.load(os.path.join(_DATA, 'band_wavelengths.npz')))
+            self._wl = wl
+        return wl[name]
 
     def mag(self, survey, band):
         """AB mag in one band, e.g. mag('LSST','i') or mag('WISE','W1')."""
@@ -393,6 +404,61 @@ class SuperMock:
             return self._area
         return float(sum(_patch_area(self.root, P) for P in self.patches))
 
+    @property
+    def completeness(self):
+        """Fraction of the full population retained (1.0 unless downsampled).
+        Number densities must divide by this: an object represents
+        1/completeness galaxies of the full catalog."""
+        nf = self.__dict__.get('_n_full', 0)
+        return 1.0 if not nf else self.n / nf
+
+    @property
+    def weight(self):
+        """Per-object weight so downsampled counts recover full densities:
+        weight = 1/completeness for every row (a scalar broadcast)."""
+        return 1.0 / self.completeness
+
+    # ------------------------------------------------- simulation time grids
+    def _grids(self):
+        g = self.__dict__.get('_tg')
+        if g is None:
+            g = dict(np.load(os.path.join(_DATA, 'time_grids.npz')))
+            self._tg = g
+        return g
+
+    @property
+    def mah_time(self):
+        """Cosmic age [Gyr] of the 101 MAH columns (Last Journey snapshots).
+        See also mah_redshift.  `sm.field('mah')` is M_halo(t) [Msun/h]."""
+        return self._grids()['mah_age_gyr']
+
+    @property
+    def mah_redshift(self):
+        return self._grids()['mah_redshift']
+
+    @property
+    def sfh_time(self):
+        """Cosmic age [Gyr] of the 117 SFH columns (SMDPL bins).
+        `sm.field('sfh')` is SFR(t) [Msun/yr]."""
+        return self._grids()['sfh_age_gyr']
+
+    @property
+    def sfh_redshift(self):
+        return self._grids()['sfh_redshift']
+
+    def catalog_fields(self):
+        """List every catalog field on disk (loaded or not)."""
+        P = self.patches[0]
+        path = self._path(P, 'lightcone_catalogs', 'lightcone_galaxies')
+        with h5py.File(path, 'r') as f:
+            g = sorted(f.keys())[0]
+            return {k: (f[g][k].shape[1:], str(f[g][k].dtype))
+                    for k in sorted(f[g].keys())}
+
+    def loaded_fields(self):
+        """Catalog fields currently in memory."""
+        return sorted(self.cat)
+
     # -------------------------------------------------- fast-reload cache I/O
     def save(self, path, surveys=('LSST', 'WISE'), seds_rows=None):
         """Write a compact, UNCOMPRESSED snapshot (catalog + the named
@@ -404,6 +470,7 @@ class SuperMock:
             f.attrs['patches'] = self.patches
             f.attrs['area_deg2'] = self.area_deg2
             f.attrs['n'] = self.n
+            f.attrs['n_full'] = self.__dict__.get('_n_full', self.n)
             gc = f.create_group('catalog')
             for k, v in self.cat.items():
                 gc.create_dataset(k, data=v)
@@ -443,6 +510,7 @@ class SuperMock:
         with h5py.File(path, 'r') as f:
             self.patches = [int(p) for p in f.attrs['patches']]
             self._area = float(f.attrs['area_deg2'])
+            self._n_full = int(f.attrs.get('n_full', f.attrs['n']))
             for k in f['catalog']:
                 self.cat[k] = f['catalog'][k][...]
             self._patch_id = self.cat.pop('_patch_id')
